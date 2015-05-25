@@ -275,3 +275,121 @@ bool isRedundantPointOfLout(char* phi, int x, int y, int img_width, int img_heig
     // ==> ∀ neighbors ∈ Lout | ∈ Rout
     return true; // is redundant point of Lout
 }
+
+
+
+
+void isolateIslands(const char*  new_phi, int width, int height)
+{
+    int cont=0;
+    int size=width*height, i=0;
+    list<int>* islandPoints = new list<int>();
+    bool* visitedIslands = new bool[size];
+
+    for(int a=0; a < size; a++) visitedIslands[a] = false;
+
+	//Find all the islands in the image
+	for(int i=0; i < size; i++)
+	{
+		cont++;
+		//Find a island 
+		for(; i < size; i++)
+		{
+			if(phi[i] == -1 && visitedIslands[i] == false) break;
+		}
+
+		int previousPoint=-1,x,y,min_x=99999999,min_y=99999999,max_x=-1,max_y=-1;
+		bool stop = false;
+		visitedIslands[i] = true;
+		
+		//Take the border of the island
+		while(1)
+		{
+			y = i/img_width;
+			x = i-y*img_width;
+
+			//Take borders to make the image later
+			if(x < min_x) min_x = x;
+			if(x > max_x) max_x = x;
+			if(y < min_y) min_y = y;
+			if(y > max_y) max_y = y;
+
+			int previousPosition = i;
+
+			//No se comprueba si está fuera de la imagen
+			for(int dx=1; dx >= -1; dx--)
+			{
+				for(int dy=1; dy >= -1; dy--)
+				{
+					int offset = (x+dx) +  width * (y + dy);
+
+					//Test for the next point of the border of the island
+					if(phi[offset] == -1 && previousPoint != offset && offset != i)
+					{
+						stop=true;
+
+						//Save the point
+						previousPoint= i;
+						islandPoints->push_front(i);
+						visitedIslands[i] = true;
+
+						//Continue with the next point
+						i = offset;
+					}
+					if(stop) break;
+				}
+				if(stop)break;
+			}
+			stop = false;
+
+			//When we've make a round or the island
+			if(visitedIslands[i] || previousPosition==i) break;
+		}//end while
+
+		//Create the isolated island
+		int tam1= max_x-min_x +1;
+		int tam2 = max_y-min_y+1;
+		int[][] island = new int[tam1][tam2];
+
+		//Fill up the matrix
+		for(int a=0; a < tam1; a++)
+			for(int b=0; b < tam2; b++)
+				island[a][b] = 0;
+
+		//Sets the border of the island 
+		for(list<int>::iterator position = islandPoints->begin(); !position.end(); ++position)
+		{
+			int X,Y;
+			Y = *position/width;
+			X = *position-y*width;
+
+			//Reajust the positions
+			X = X - min_x;
+			Y = Y - min_y;
+			island[X][Y] = 1;
+		}
+		
+		CImg<float> isla(tam1, tam2, 1,3,255); 
+
+		//Fill up the image
+		for(int a=0; a < tam1; a++)
+		{
+			bool flag = false;
+			for(int b=0; b < tam2; b++)
+			{
+				if(island[a][b] == 1)
+				{
+					if(!flag)flag = true;
+					else flag= false;
+					isla(a, b) = 0;
+				} 
+				
+				if(flag) isla(x, y) = 0;
+			}	
+		}
+		
+		//Save the isolated island
+		isla.save("isla" + cont + ".png");	
+		
+	}//END FOR
+}

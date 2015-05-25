@@ -108,10 +108,6 @@ public :
     void divide_Lin();
     //! Calculates the covering of the objects found in the image
     void calculateCovering() const;
-
-    //! Isolates an island of the image
-    std::vector<std::vector<int>* >* isolateIsland();
-
 protected :
 
     //! Initialization of #phi with a shape.
