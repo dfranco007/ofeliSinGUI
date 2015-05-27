@@ -288,6 +288,10 @@ private :
     //! Position of the head of each sublists in main lists
     int** sublistHeadPosition;
 
+	//! Number of locks
+	int numLocks;
+	//! Locks array
+	omp_lock_t* locks;
 };
 
 // Definitions

@@ -1,0 +1,8 @@
+for a in 1 2 4 8 16 20 24 28 32 36 40 44 48
+do
+	echo $a threads
+	for i in {1..4}
+	do
+		OMP_NUM_THREADS=$a ./prueba
+	done
+done

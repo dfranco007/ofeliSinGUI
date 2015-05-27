@@ -71,7 +71,7 @@ ActiveContour::ActiveContour(const unsigned char* img_data1, int img_width1, int
     img_size(img_width1*img_height1), kernel_radius( (kernel_length1-1)/2 ), phi( new char[img_width1*img_height1] ),
     gaussian_kernel( make_gaussian_kernel(kernel_length1,sigma1) ), iteration_max( 5*std::max(img_width1,img_height1) ),
     iteration(0), Na(0), Ns(0), previous_lists_length(99999999), lists_length(0), oscillations_in_a_row(0),
-    Lout( ), Lin( )
+    Lout( ), Lin( ), numLocks(50)
 {
     if( img_data1 == NULL )
     {
@@ -108,6 +108,10 @@ ActiveContour::ActiveContour(const unsigned char* img_data1, int img_width1, int
     //Initiliaze some extra variable
     hasOutwardEvolutionInThread = new bool[numThreads];
     hasInwardEvolutionInThread = new bool[numThreads];
+	
+	//Initialize locks
+	locks = new omp_lock_t[numLocks];
+	for(int i=0; i < numLocks; i++) omp_init_lock( &(locks[i]) );
 }
 
 ActiveContour::ActiveContour(const unsigned char* img_data1, int img_width1, int img_height1,
@@ -118,7 +122,7 @@ ActiveContour::ActiveContour(const unsigned char* img_data1, int img_width1, int
     img_size(img_width1*img_height1), kernel_radius( (kernel_length1-1)/2 ), phi( new char[img_width1*img_height1] ),
     gaussian_kernel( make_gaussian_kernel(kernel_length1,sigma1) ), iteration_max( 5*std::max(img_width1,img_height1) ),
     iteration(0), Na(0), Ns(0), previous_lists_length(99999999), lists_length(0), oscillations_in_a_row(0),
-    Lout(  ), Lin( )
+    Lout(  ), Lin( ), numLocks(50)
 {
     if( img_data1 == NULL )
     {
@@ -161,6 +165,10 @@ ActiveContour::ActiveContour(const unsigned char* img_data1, int img_width1, int
     //Initiliaze some extra variable
     hasOutwardEvolutionInThread = new bool[numThreads];
     hasInwardEvolutionInThread = new bool[numThreads];
+	
+	//Initialize locks
+	locks = new omp_lock_t[numLocks];
+	for(int i=0; i < numLocks; i++) omp_init_lock( &(locks[i]) );
 }
 
 ActiveContour::ActiveContour(const ActiveContour& ac) :
@@ -355,13 +363,6 @@ ActiveContour::~ActiveContour()
 
 void ActiveContour::do_one_iteration_in_cycle1()
 {
-/*
-    std::clock_t startTime, stopTime,ya,yi;
-    double elapsedTime;
-    startTime = std::clock();
-    ya = std::clock();
-    std::cout << "/////////////////////////////////" << std::endl;
-*/
     // means of the Chan-Vese model for children classes ACwithoutEdges and ACwithoutEdgesYUV
     calculate_means(); // virtual function for region-based models
 
@@ -370,18 +371,12 @@ void ActiveContour::do_one_iteration_in_cycle1()
 
     Lout.splitList(Splited_Lout,numThreads,sublistHead, sublistHeadPosition,0);
     Lin.splitList(Splited_Lin,numThreads,sublistHead, sublistHeadPosition,1);
-/*
-    stopTime = std::clock();
-    elapsedTime = (stopTime - startTime) / double(CLOCKS_PER_SEC);
-    std::cout <<"split-"<< elapsedTime << std::endl;
-*/
+
     int tid;
     #pragma omp parallel private(tid)
     {
         tid = omp_get_thread_num();
         hasOutwardEvolutionInThread[tid]=false;     
-
-        //startTime = std::clock();
 
         for( list<int>::iterator Lout_point = Splited_Lout[tid]->begin(); !Lout_point.end(); )
         {
@@ -400,19 +395,9 @@ void ActiveContour::do_one_iteration_in_cycle1()
                 ++Lout_point;
             }
         }
-/*
-        stopTime = std::clock();
-        elapsedTime = (stopTime - startTime) / double(CLOCKS_PER_SEC);
-        std::cout << tid << "bucle1: "<<elapsedTime << std::endl;
-        startTime = std::clock();
-*/
+
         clean_Lin(tid); // eliminate Lin redundant points
-/*
-        stopTime = std::clock();
-        elapsedTime = (stopTime - startTime) / double(CLOCKS_PER_SEC);
-        std::cout << tid << "cleanLin: " << elapsedTime << std::endl;
-        startTime = std::clock();
-*/
+
         hasInwardEvolutionInThread[tid]=false;
 
         for( list<int>::iterator Lin_point = Splited_Lin[tid]->begin(); !Lin_point.end(); )
@@ -432,21 +417,8 @@ void ActiveContour::do_one_iteration_in_cycle1()
                 ++Lin_point;
             }
         }
-/*
-        stopTime = std::clock();
-        elapsedTime = (stopTime - startTime) / double(CLOCKS_PER_SEC);
-        std::cout << tid << "bucle2: "<<elapsedTime << std::endl;
-        startTime = std::clock();
-*/
         clean_Lout(tid); // eliminate Lout redundant points
-/*
-        stopTime = std::clock();
-        elapsedTime = (stopTime - startTime) / double(CLOCKS_PER_SEC);
-        std::cout << tid << "cleanLout: " << elapsedTime << std::endl;
-        startTime = std::clock();
-*/
     }
-    //startTime = std::clock();
 
     Lout.collectList(&Splited_Lout,sublistHead, sublistHeadPosition,0,numThreads );
     Lin.collectList(&Splited_Lin,sublistHead, sublistHeadPosition,1,numThreads);
@@ -470,17 +442,7 @@ void ActiveContour::do_one_iteration_in_cycle1()
     }
     //Collect all counters of each thread
     update_for_means_global();
-/*
-    stopTime = std::clock();
-    elapsedTime = (stopTime - startTime) / double(CLOCKS_PER_SEC);
-    std::cout << "COLLECT: " << elapsedTime << std::endl;
-    startTime = std::clock();
-    std::cout << "/////////////////////////////////" << std::endl;
 
-    yi = std::clock();
-    elapsedTime = (yi - ya) / double(CLOCKS_PER_SEC);
-    std::cout << "BLUCE-ENTERO: " << elapsedTime << std::endl;
-*/
     iteration++;
     return;
 }
@@ -661,22 +623,22 @@ void ActiveContour::add_Rout_neighbor_to_Lout(int neighbor_offset,int tid)
     // if a neighbor ∈ Rout
     if( phi[neighbor_offset] == 3 ) // exterior value
     {
-        #pragma omp critical
-        {
-            if( phi[neighbor_offset] == 3 ) // exterior value
-            {
-                phi[neighbor_offset] = 1; // outside boundary value
+		int lockNumber = ( (neighbor_offset/img_width) *numLocks)/img_height;
+		omp_set_lock(&(locks[lockNumber]));
 
-                // neighbor ∈ Rout ==> ∈ neighbor Lout
-                Splited_Lout[tid]->push_front(neighbor_offset);
-                // due to the linked list implementation
-                // with a sentinel/dummy node after the last node and not before the first node ;
-                // 'push_front' never invalidates iterator 'Lout_point', even if 'Lout_point' points to the first node.
-            }
-        }
+		if( phi[neighbor_offset] == 3 ) // exterior value
+		{
+			phi[neighbor_offset] = 1; // outside boundary value
+
+			// neighbor ∈ Rout ==> ∈ neighbor Lout
+			Splited_Lout[tid]->push_front(neighbor_offset);
+			// due to the linked list implementation
+			// with a sentinel/dummy node after the last node and not before the first node ;
+			// 'push_front' never invalidates iterator 'Lout_point', even if 'Lout_point' points to the first node.
+		}		
+		omp_unset_lock(&(locks[lockNumber]));      
     }
-
-    return;
+   return;
 }
 
 void ActiveContour::add_Rin_neighbor_to_Lin(int neighbor_offset,int tid)
@@ -684,21 +646,21 @@ void ActiveContour::add_Rin_neighbor_to_Lin(int neighbor_offset,int tid)
     // if a neighbor ∈ Rin
     if( phi[neighbor_offset] == -3 ) // interior value
     {
-       #pragma omp critical
-       {
-            if( phi[neighbor_offset] == -3 ) // interior value
-            {
-                phi[neighbor_offset] = -1; // inside boundary value
+		int lockNumber = ( (neighbor_offset/img_width) *numLocks)/img_height;
+		omp_set_lock(&(locks[lockNumber]));
+	
+		if( phi[neighbor_offset] == -3 ) // interior value
+		{
+			phi[neighbor_offset] = -1; // inside boundary value
 
-                // neighbor ∈ Rin ==> ∈ neighbor Lin
-                Splited_Lin[tid]->push_front(neighbor_offset);
-                // due to the linked list implementation
-                // with a sentinel/dummy node after the last node and not before the first node ;
-                // 'push_front' never invalidates iterator 'Lin_point', even if 'Lin_point' points to the first node.
-            }
-       }
+			// neighbor ∈ Rin ==> ∈ neighbor Lin
+			Splited_Lin[tid]->push_front(neighbor_offset);
+			// due to the linked list implementation
+			// with a sentinel/dummy node after the last node and not before the first node ;
+			// 'push_front' never invalidates iterator 'Lin_point', even if 'Lin_point' points to the first node.
+		}
+       	omp_unset_lock(&(locks[lockNumber]));
     }
-
     return;
 }
 

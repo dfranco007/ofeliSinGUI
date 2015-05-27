@@ -1,3 +1,6 @@
+rm result.png 2> /dev/null
+rm islas/* 2> /dev/null
+rm prueba 2> /dev/null
 echo "Prueba con "$1" threads"
 g++ $2 main.cpp activecontour.cpp ac_withoutedges.cpp -o prueba -fopenmp -Dcimg_use_png -lpng -lz -Dcimg_display=0 
 echo "Ejecutando..."

@@ -14,7 +14,7 @@ static const int list_end = -9999999;
 
 int main(int argc, char* argv[])
 {
-	CImg<unsigned char> image("imagenes/2.png"); //Imagen a segmentar
+	CImg<unsigned char> image("imagenes/3.png"); //Imagen a segmentar
 	int width1 = image.width(), height1=image.height(); //variables de la imagen a segmentar
 	int size1 = width1*height1;//tamaño de la imagen a segmentar
 	unsigned char* img = new unsigned char[size1]; //Imagen en forma de vector
@@ -37,7 +37,6 @@ int main(int argc, char* argv[])
     int lambda_in1 = 1;
     int kernel_curve1 = 5;
     double std_curve1 = 2.0;
-	unsigned char* image_result_uchar = new unsigned char[3*size2];
 	struct timeval time1;
 
 	//Coger los valores de la imagen a segmentar y se rellena el array
@@ -83,7 +82,7 @@ int main(int argc, char* argv[])
 	double t2 = time1.tv_sec * 1000000 + time1.tv_usec;
 	
 	double totalTime = (t2-t1)/1000000;	
-	std::cout << "Tiempo: " << totalTime << " s" << std::endl;
+	std::cout <<  totalTime  << std::endl;
 	/***************************************************************************/
 	
 	//Comprobación de resultados
@@ -91,11 +90,10 @@ int main(int argc, char* argv[])
 	Lin1 = &ac->get_Lin();
 	const char*  new_phi = ac->get_phi();
 	
-	isolateIslands(new_phi, width1, height1);
-
+	//isolateIslands(new_phi, width1, height1);
 /*
 	//DISPLAY DE LOS BORDES ENCONTRADOS
-	CImg<float> imagen_a_color("imagenes/2.png"); 
+	CImg<float> imagen_a_color("imagenes/3.png"); 
 	for(int i=0; i < size1; i++)
 	{
 		int x,y;
@@ -118,8 +116,8 @@ int main(int argc, char* argv[])
 	}
 	
 	//imagen_a_color.display("RESULTADO");
-	//imagen_a_color.save("result.png");
-	*/
+	imagen_a_color.save("result.png");
+*/	
 /*	
 	//IMPRIMIR LA PHI
 	printf("TAM: %d\n", Lout1->size());
@@ -285,7 +283,8 @@ void isolateIslands(const char*  phi, int width, int height)
     bool* visitedIslands = new bool[size];
 
     for(int a=0; a < size; a++) visitedIslands[a] = false;
-	
+			int ye=0;
+
 	//Find all the islands in the image
 	for(int i=0; i < size; i++)
 	{
@@ -297,7 +296,6 @@ void isolateIslands(const char*  phi, int width, int height)
 		{
 			if(phi[i] == -1 && visitedIslands[i] == false) break;
 		}
-		std::cout << i << std::endl;
 		int previousPoint=-1,x,y,min_x=99999999,min_y=99999999,max_x=-1,max_y=-1;
 		bool stop = false;
 		visitedIslands[i] = true;
@@ -305,9 +303,16 @@ void isolateIslands(const char*  phi, int width, int height)
 		//Take the border of the island
 		while(1)
 		{
+			
 			y = i/width;
-			x = i-y*width;
+			x = i- (y*width);
 
+			if(ye==0)
+			{
+				std::cout << "x: " << x << std::endl;
+				std::cout << "y: " << y << std::endl;
+			}
+			
 			//Take borders to make the image later
 			if(x < min_x) min_x = x;
 			if(x > max_x) max_x = x;
@@ -316,37 +321,46 @@ void isolateIslands(const char*  phi, int width, int height)
 
 			int previousPosition = i;
 
-			//No se comprueba si está fuera de la imagen
-			for(int dx=1; dx >= -1; dx--)
+			if(x > 0 && x < width && y > 0 && y < height )
 			{
-				for(int dy=1; dy >= -1; dy--)
+				//No se comprueba si está fuera de la imagen
+				for(int dx=-1; dx <= 1; dx++)
 				{
-					int offset = (x+dx) +  width * (y + dy);
-
-					//Test for the next point of the border of the island
-					if(phi[offset] == -1 && previousPoint != offset && offset != i)
+					for(int dy=-1; dy <= 1; dy++)
 					{
-						stop=true;
+						int offset = (x+dx) +  width * (y + dy);
 
-						//Save the point
-						previousPoint= i;
-						islandPoints->push_front(i);
-						visitedIslands[i] = true;
+						//Test for the next point of the border of the island
+						if(phi[offset] == -1 && previousPoint != offset && offset != i)
+						{
+							stop=true;
 
-						//Continue with the next point
-						i = offset;
+							//Save the point
+							previousPoint= i;
+							islandPoints->push_front(i);
+							visitedIslands[i] = true;
+
+							//Continue with the next point
+							i = offset;
+						}
+						if(stop) break;				
 					}
-					if(stop) break;				
+					if(stop)break;							
 				}
-				if(stop)break;							
-			}							
+			}
+										
 			stop = false;
 
 			//When we've make a round or the island
 			if(visitedIslands[i] || previousPosition==i) break;
 		}//end while
-			std::cout << "C" << std::endl;
-
+		
+		std::cout << "min_x: " << min_x << std::endl;
+		std::cout << "min_y: " << min_y << std::endl;
+		std::cout << "max_x: " << max_x << std::endl;
+		std::cout << "max_y: " << max_y << std::endl;
+		ye++;
+		
 		//Create the isolated island
 		int tam1= max_x-min_x +1;
 		int tam2 = max_y-min_y+1;
@@ -358,7 +372,6 @@ void isolateIslands(const char*  phi, int width, int height)
 			for(int b=0; b < tam2; b++)
 				island[a][b] = 0;
 			
-		std::cout << "D" << std::endl;
 
 		//Sets the border of the island 
 		for(ofeli::list<int>::iterator position = islandPoints->begin(); !position.end(); ++position)
@@ -366,20 +379,13 @@ void isolateIslands(const char*  phi, int width, int height)
 			int X,Y;
 			Y = *position/width;
 			X = *position-(Y*width);
-					std::cout << "///////////" << std::endl;
 
-					std::cout << "min_x:" << min_x << std::endl;
-		std::cout << "min_y:" << min_y << std::endl;
-			std::cout << "X:" << X << std::endl;
-			std::cout << "Y:" << Y << std::endl;
 			//Reajust the positions
 			X = X - min_x;
 			Y = Y - min_y;
-			std::cout << "X:" << X << std::endl;
-			std::cout << "Y:" << Y << std::endl;
+
 			island[X][Y] = 1;
 		}	
-		std::cout << "E" << std::endl;
 
 		//Creates the island
 		CImg<float> isla(tam1, tam2, 1,3,255); 
@@ -409,7 +415,6 @@ void isolateIslands(const char*  phi, int width, int height)
 				} 
 			}	
 		}
-				std::cout << "F" << std::endl;
 
 		//Fill up the image from bottom to top
 		for(int a=tam1 -1; a >=0; a--)
@@ -436,7 +441,6 @@ void isolateIslands(const char*  phi, int width, int height)
 				} 
 			}	
 		}
-		std::cout << "G" << std::endl;
 
 		char nombre[25];
 		sprintf (nombre, "islas/isla%d.png", cont);
