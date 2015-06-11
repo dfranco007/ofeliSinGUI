@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include "CImg/CImg.h"
 #include <sys/time.h>
+#include <locale>
+#include <iostream>
 
 using namespace cimg_library;
 
@@ -12,14 +14,20 @@ void isolateIslands(const char*  new_phi, int width, int height);
 
 static const int list_end = -9999999;
 
+template <class charT, charT sep>
+class punct_facet: public std::numpunct<charT> {
+protected:
+    charT do_decimal_point() const { return sep; }
+};
+
 int main(int argc, char* argv[])
 {
-	CImg<unsigned char> image("imagenes/3.png"); //Imagen a segmentar
+	CImg<unsigned char> image("imagenes/buena3/buena3.png" ); //Imagen a segmentar
 	int width1 = image.width(), height1=image.height(); //variables de la imagen a segmentar
 	int size1 = width1*height1;//tamaño de la imagen a segmentar
 	unsigned char* img = new unsigned char[size1]; //Imagen en forma de vector
 	
-	CImg<unsigned char> phi_img("imagenes/grid2.png"); //Imagen de la primera phi
+	CImg<unsigned char> phi_img("imagenes/plantilla3.png"); //Imagen de la primera phi
 	int width2 = phi_img.width(), height2=phi_img.height(); //variables de la imagen de la primera phi
 	int size2 = width2*height2;//tamaño de la imagen phi
 	char* phi = new char[size2]; //Imagen de la phi en forma de vector
@@ -82,6 +90,8 @@ int main(int argc, char* argv[])
 	double t2 = time1.tv_sec * 1000000 + time1.tv_usec;
 	
 	double totalTime = (t2-t1)/1000000;	
+	
+	std::cout.imbue(std::locale(std::cout.getloc(), new punct_facet<char, ','>));
 	std::cout <<  totalTime  << std::endl;
 	/***************************************************************************/
 	
@@ -93,7 +103,7 @@ int main(int argc, char* argv[])
 	//isolateIslands(new_phi, width1, height1);
 /*
 	//DISPLAY DE LOS BORDES ENCONTRADOS
-	CImg<float> imagen_a_color("imagenes/3.png"); 
+	CImg<float> imagen_a_color("imagenes/buena3/buena1.png"); 
 	for(int i=0; i < size1; i++)
 	{
 		int x,y;
@@ -117,7 +127,7 @@ int main(int argc, char* argv[])
 	
 	//imagen_a_color.display("RESULTADO");
 	imagen_a_color.save("result.png");
-*/	
+	*/
 /*	
 	//IMPRIMIR LA PHI
 	printf("TAM: %d\n", Lout1->size());
