@@ -321,8 +321,7 @@ void isolateIslands(const char*  phi, int width, int height)
 
 			int previousPosition = i;
 
-			if(x > 0 && x < width && y > 0 && y < height )
-			{
+
 				//No se comprueba si está fuera de la imagen
 				for(int dx=-1; dx <= 1; dx++)
 				{
@@ -346,9 +345,7 @@ void isolateIslands(const char*  phi, int width, int height)
 						if(stop) break;				
 					}
 					if(stop)break;							
-				}
-			}
-										
+				}									
 			stop = false;
 
 			//When we've make a round or the island

@@ -86,7 +86,7 @@ public :
     void display() const;
 
     //! Getter function for the pointer #phi.
-    const char* get_phi() const;
+    char* get_phi() const;
     //! Getter function for the linked list #Lout.
     const ofeli::list<int>& get_Lout() const;
     //! Getter function for the linked list #Lin.
@@ -107,7 +107,7 @@ public :
     //! Divide la lista Lout en varios trozos que corresponden al número de threads.
     void divide_Lin();
     //! Calculates the covering of the objects found in the image
-    void calculateCovering() const;
+    double calculateCovering(int innerValue) const;
 
 protected :
 

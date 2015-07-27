@@ -4,15 +4,16 @@
 #include <sys/time.h>
 #include <locale>
 #include <iostream>
+#include <fstream>
+#include <string>
 
 using namespace cimg_library;
 
 void clean_boundaries(char* phi, char* phi_clean,int img_size,int img_width, int img_height);
 bool isRedundantPointOfLin(char* phi, int x, int y, int img_width, int img_height);
 bool isRedundantPointOfLout(char* phi, int x, int y, int img_width, int img_height);
-void isolateIslands(const char*  new_phi, int width, int height);
-
-static const int list_end = -9999999;
+int isolateIslands(char*  new_phi, int width, int height, int islandInnerValue, int islandInnerFarValue);
+void fillUpIsland(char*  phi,int width,int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y);
 
 template <class charT, charT sep>
 class punct_facet: public std::numpunct<charT> {
@@ -21,48 +22,95 @@ protected:
 };
 
 int main(int argc, char* argv[])
-{
-	CImg<unsigned char> image("imagenes/buena3/buena3.png" ); //Imagen a segmentar
-	int width1 = image.width(), height1=image.height(); //variables de la imagen a segmentar
-	int size1 = width1*height1;//tamaño de la imagen a segmentar
-	unsigned char* img = new unsigned char[size1]; //Imagen en forma de vector
-	
-	CImg<unsigned char> phi_img("imagenes/plantilla3.png"); //Imagen de la primera phi
-	int width2 = phi_img.width(), height2=phi_img.height(); //variables de la imagen de la primera phi
-	int size2 = width2*height2;//tamaño de la imagen phi
-	char* phi = new char[size2]; //Imagen de la phi en forma de vector
-	char* phi_clean = new char[size2]; //Imagen de la phi en forma de vector
+{	
+	//File variable configuration
+	std::string line;
+	std::ifstream file;
+	file.open("levelset.conf");
+	if(!file)
+	{
+		fprintf(stderr,"levelset.conf file not found.");
+		return 1;
+	}	
+	//Skip first 5 lines cause are comments
+	for(int i =1; i <6; i++)   getline (file,line);
 
-	//Listas
+	//Background and islands configuration
+	bool inverse;
+	int islandInnerValue,islandInnerFarValue;
+	getline (file,line);
+	line = line.substr(0,line.size()-1); //To remove the last CR character
+	if(line.compare("true") ==0) inverse = true;
+	else inverse = false;
+	if(inverse)
+	{
+		islandInnerValue = 1;
+		islandInnerFarValue = 3;
+	}
+	else
+	{
+		islandInnerValue = -1;
+		islandInnerFarValue = -3;
+	}
+
+	getline (file,line);
+	std::string imageName = line.substr(0,line.size()-1); //To remove the last CR character
+	CImg<unsigned char> image(imageName.c_str()); //Image to be segmented and its variables
+	int width = image.width(), height=image.height(); 
+	int size = width*height;
+	unsigned char* img = new unsigned char[size]; 
+	
+	getline (file,line);
+	line = line.substr(0,line.size()-1); //To remove the last CR character
+	CImg<unsigned char> phi_img(line.c_str()); //Contour template and its variables
+	char* phi = new char[size];
+	char* phi_clean = new char[size]; 
+
+	//Test images size
+	if( (image.width() != phi_img.width()) || (image.height() != phi_img.height()) )
+	{
+		fprintf(stderr,"The image to be segmented and its contour template have different sizes.");
+		return 2;
+	}
+	
+	//Variables to make the segmentation
     const ofeli::list<int>* Lout1;
     const ofeli::list<int>* Lin1;
-	
-	//Otras variables
-	bool hasSmoothingCycle1 = true;
-  	int Na1 = 30;
-    int Ns1 = 3;
-    int lambda_out1 = 1;
-    int lambda_in1 = 1;
-    int kernel_curve1 = 5;
-    double std_curve1 = 2.0;
+	getline (file,line);
+	line = line.substr(0,line.size()-1); //To remove the last CR character
+	bool hasSmoothingCycle1;
+	if (line.compare("true") ==0)	hasSmoothingCycle1 = true;
+	else	hasSmoothingCycle1 = false;
+	getline (file,line);
+	int Na1 = std::atoi(line.c_str()); 
+	getline (file,line);
+    int Ns1 = std::atoi(line.c_str()); 
+	getline (file,line);	
+    int lambda_out1 = std::atoi(line.c_str()); 
+	getline (file,line);	
+    int lambda_in1 = std::atoi(line.c_str()); 
+	getline (file,line);	
+    int kernel_curve1 = std::atoi(line.c_str()); 	
+	getline (file,line);
+    double std_curve1 = std::atof(line.c_str());
 	struct timeval time1;
 
-	//Coger los valores de la imagen a segmentar y se rellena el array
-	for(int i=0; i < size1; i++)
+	//Fill up the image array
+	for(int i=0; i < size; i++)
 	{
 		int x,y;
-		y = i/width1;
-		x = i - (y*width1);
+		y = i/width;
+		x = i - (y*width);
 		
 		img[i] = *image.data(x,y);
 	}
 	
-	//Coger los valores de la imagen con el phi inicial y se rellena el array
-	for(int i=0; i < size2; i++)
+	//Fill up the phi of the level set with the contour template
+	for(int i=0; i < size; i++)
 	{
 		int x,y;
-		y = i/width2;
-		x = i - (y*width2);
+		y = i/width;
+		x = i - (y*width);
 		
 		if(*phi_img.data(x,y) < 128)
 		{
@@ -75,75 +123,74 @@ int main(int argc, char* argv[])
 			phi_clean[i]=-1;
 		}
 	}
-	clean_boundaries(phi,phi_clean,size2,width2,height2);		
+	clean_boundaries(phi,phi_clean,size,width,height);
+	
 
-	/******************************** ALGORITMO ********************************/
+/******************************** EVOLUTION ALGORITHM ********************************/
+	
+	//Create the contour 
 	ofeli::ActiveContour* ac;
-	ac = new ofeli::ACwithoutEdges(img, width1, height1, phi_clean, hasSmoothingCycle1, kernel_curve1, std_curve1, Na1, Ns1, lambda_out1, lambda_in1);
+	ac = new ofeli::ACwithoutEdges(img, width, height, phi_clean, hasSmoothingCycle1, kernel_curve1, std_curve1, Na1, Ns1, lambda_out1, lambda_in1);
 	
 	gettimeofday(&time1, NULL);	
 	double t1 = time1.tv_sec * 1000000 + time1.tv_usec;
 
-	ac->evolve(); //Evolución del contorno
+	ac->evolve(); //Evolve the contour
 	
+	//Save the results
+	char*  new_phi= ac->get_phi();
+		
 	gettimeofday(&time1, NULL);	
 	double t2 = time1.tv_sec * 1000000 + time1.tv_usec;
-	
 	double totalTime = (t2-t1)/1000000;	
 	
 	std::cout.imbue(std::locale(std::cout.getloc(), new punct_facet<char, ','>));
-	std::cout <<  totalTime  << std::endl;
-	/***************************************************************************/
+	std::cout <<  "Execution time: " << totalTime  << " s" << std::endl;
+		
+	//Calculate convering
+	double covering = ac->calculateCovering(islandInnerValue);
+	std::cout << "Covering: " << covering << "%" << std::endl;
+
+	//Modify the border of the image to take in a easier way the islands of the border	
+	for(int x=0; x < width; x++)//Top margin
+		if(new_phi[x] == islandInnerFarValue) new_phi[x] = islandInnerValue;
+	for(int y=0; y < height; y++)//Right margin
+		if(new_phi[(width * y) -1] == islandInnerFarValue) new_phi[(width * y) -1] = islandInnerValue;
+	for(int y=0; y < height; y++)//Left margin	
+		if(new_phi[width * y] == islandInnerFarValue) new_phi[width * y] = islandInnerValue;
+	for(int x=0; x < width; x++)//Bottom margin	
+		if(new_phi[( (height-1) * width) + x +1] == islandInnerFarValue) new_phi[( (height-1) * width) + x +1] = islandInnerValue;	
 	
-	//Comprobación de resultados
-	Lout1 = &ac->get_Lout();
-	Lin1 = &ac->get_Lin();
-	const char*  new_phi = ac->get_phi();
-	
-	//isolateIslands(new_phi, width1, height1);
-/*
-	//DISPLAY DE LOS BORDES ENCONTRADOS
-	CImg<float> imagen_a_color("imagenes/buena3/buena1.png"); 
-	for(int i=0; i < size1; i++)
+/** SAVE THE RESULT IMAGE **/
+	CImg<float> imagen_a_color(imageName.c_str()); //Must be the same image as the image to be segmented
+	for(int i=0; i < size; i++)
 	{
 		int x,y;
-		y = i/width1;
-		x = i - (y*width1);
+		y = i/width;
+		x = i - (y*width);
 		if(new_phi[i] == -1 )
 		{
-			//Azul
+			//Red represents Lin
+			imagen_a_color(x, y, 0,0) = 255;
+			imagen_a_color(x, y, 0,1) = 0;
+			imagen_a_color(x, y, 0,2) = 0;		
+		}
+		if(new_phi[i] == 1 )
+		{
+			//Blue represents Lout
 			imagen_a_color(x, y, 0,0) = 0;
 			imagen_a_color(x, y, 0,1) = 26;
 			imagen_a_color(x, y, 0,2) = 255;
 		}
-		if(new_phi[i] == 1 )
-		{
-			//Rojo
-			imagen_a_color(x, y, 0,0) = 255;
-			imagen_a_color(x, y, 0,1) = 0;
-			imagen_a_color(x, y, 0,2) = 0;
-		}
 	}
 	
 	//imagen_a_color.display("RESULTADO");
-	imagen_a_color.save("result.png");
-	*/
-/*	
-	//IMPRIMIR LA PHI
-	printf("TAM: %d\n", Lout1->size());
-	std::cout << "PHI: "<< std::endl;
-	int cont=0;
-	for(int i=0; i < size1; i++)
-	{
-		if((i % width1 )== 0)
-		{
-			std::cout << "<-- fila " << cont << std::endl;
-			cont++;
-		} 
-		printf(", %d", new_phi[i]);
-	}
-	std::cout << std::endl;
-*/
+	imagen_a_color.save("result.png");	
+	
+	//Isolate all islands and count them
+	int cont = isolateIslands(new_phi, width, height, islandInnerValue, islandInnerFarValue);
+	std::cout << "Number of islands: " << cont << std::endl;
+
 	return 0;	
 }
 
@@ -279,182 +326,231 @@ bool isRedundantPointOfLout(char* phi, int x, int y, int img_width, int img_heig
         }
     }
 
-    // ==> ∀ neighbors ∈ Lout | ∈ Rout
+    // ==> ∀ neighbours ∈ Lout | ∈ Rout
     return true; // is redundant point of Lout
 }
 
 
 
 
-void isolateIslands(const char*  phi, int width, int height)
+int isolateIslands(char*  phi, int width, int height, int islandInnerValue, int islandInnerFarValue)
 {
     int cont=0;
     int size=width*height, i=0;
     bool* visitedIslands = new bool[size];
-
     for(int a=0; a < size; a++) visitedIslands[a] = false;
-			int ye=0;
-
+	
 	//Find all the islands in the image
 	for(int i=0; i < size; i++)
 	{
 	    ofeli::list<int>* islandPoints = new ofeli::list<int>();
 
-		cont++;
 		//Find a island 
 		for(; i < size; i++)
 		{
-			if(phi[i] == -1 && visitedIslands[i] == false) break;
+			if(phi[i] == islandInnerValue && !visitedIslands[i]) break;
 		}
-		int previousPoint=-1,x,y,min_x=99999999,min_y=99999999,max_x=-1,max_y=-1;
-		bool stop = false;
+		int x,y,min_x=99999999,min_y=99999999,max_x=-1,max_y=-1;
+		
+		//Mark the first point of the island
 		visitedIslands[i] = true;
+		islandPoints->push_front(i);
+		int islandPoint = i, origin =i, numberOfPoints=0;
+		bool backToOrigin = false;
 		
 		//Take the border of the island
 		while(1)
-		{
+		{	
+			numberOfPoints++;
 			
-			y = i/width;
-			x = i- (y*width);
+			y = islandPoint/width;
+			x = islandPoint- (y*width);
 
-			if(ye==0)
-			{
-				std::cout << "x: " << x << std::endl;
-				std::cout << "y: " << y << std::endl;
-			}
-			
 			//Take borders to make the image later
 			if(x < min_x) min_x = x;
 			if(x > max_x) max_x = x;
 			if(y < min_y) min_y = y;
 			if(y > max_y) max_y = y;
 
-			int previousPosition = i;
-
-			if(x > 0 && x < width && y > 0 && y < height )
+			int offset =-1;
+			bool found = false;
+			//To find the next border point in current pixel neighbour prioritizing adjacent ones. 
+			//Row must also prove to be the same to not jump on other island at the other end.
+			//We must test the borders of the image also.
+			if( x-1 >= 0  )
 			{
-				//No se comprueba si está fuera de la imagen
-				for(int dx=-1; dx <= 1; dx++)
+				if(phi[(x-1) +  width * y] == islandInnerValue && !visitedIslands[(x-1) +  width * y])
 				{
-					for(int dy=-1; dy <= 1; dy++)
-					{
-						int offset = (x+dx) +  width * (y + dy);
-
-						//Test for the next point of the border of the island
-						if(phi[offset] == -1 && previousPoint != offset && offset != i)
-						{
-							stop=true;
-
-							//Save the point
-							previousPoint= i;
-							islandPoints->push_front(i);
-							visitedIslands[i] = true;
-
-							//Continue with the next point
-							i = offset;
-						}
-						if(stop) break;				
-					}
-					if(stop)break;							
+					offset = (x-1) +  width * y; 			//Adjacent left neighbour
+					found = true;
+				}	
+			}
+			if( x+1 < width && !found)
+			{
+				if(phi[(x+1) +  width * y] == islandInnerValue && !visitedIslands[(x+1) +  width * y])
+				{
+					offset = (x+1) +  width * y;		//Adjacent right neighbour
+					found = true;
+				}				
+			}
+			if( y-1 >= 0 && !found)
+			{
+				if(phi[x +  width * (y-1)] == islandInnerValue && !visitedIslands[x +  width * (y-1)])
+				{
+					offset = x +  width * (y-1);		//Adjacent bottom neighbour	
+					found = true;
+				}					
+			}
+			if(y+1 < height && !found)
+			{
+				if(phi[x +  width * (y+1)] == islandInnerValue && !visitedIslands[x +  width * (y+1)])
+				{
+					offset = x +  width * (y+1);		//Adjacent top neighbour
+					found = true;
+				}			
+			}
+			if( x-1>= 0 && y+1 < height && !found)
+			{
+				if(phi[(x-1) +  width * (y+1)] == islandInnerValue && !visitedIslands[(x-1) +  width * (y+1)])
+				{
+					offset = (x-1) +  width * (y+1);
+					found = true;
+				}	
+			}
+			if( x-1>= 0 && y -1 >= 0 && !found)
+			{
+				if(phi[(x-1) +  width * (y-1)] == islandInnerValue && !visitedIslands[(x-1) +  width * (y-1)])
+				{
+					offset = (x-1) +  width * (y-1);
+					found = true;
+				}	
+			}
+			if( x+1 < width && y -1 >= 0 && !found)
+			{
+				if(phi[(x+1) +  width * (y-1)] == islandInnerValue && !visitedIslands[(x+1) +  width * (y-1)])
+				{
+					offset = (x+1) +  width * (y-1);
+					found = true;
+				}	
+			}
+			if( x+1 < width && y +1 < height && !found)
+			{
+				if(phi[(x+1) +  width * (y+1)] == islandInnerValue && !visitedIslands[(x+1) +  width * (y+1)])
+				{
+					offset = (x+1) +  width * (y+1);
+				}	
+			}
+			
+			//When we've make a round or the island
+			if(offset == -1)
+			{
+				//To make a try through other side to find a possible route
+				if(backToOrigin) break; //end while
+				else 
+				{
+					offset = origin;
+					backToOrigin=true;
 				}
 			}
-										
-			stop = false;
+			else
+			{
+				//Save the point
+				islandPoints->push_front(offset);
+				visitedIslands[offset] = true;
+			}			
 
-			//When we've make a round or the island
-			if(visitedIslands[i] || previousPosition==i) break;
-		}//end while
-		
-		std::cout << "min_x: " << min_x << std::endl;
-		std::cout << "min_y: " << min_y << std::endl;
-		std::cout << "max_x: " << max_x << std::endl;
-		std::cout << "max_y: " << max_y << std::endl;
-		ye++;
-		
-		//Create the isolated island
-		int tam1= max_x-min_x +1;
-		int tam2 = max_y-min_y+1;
-		int** island = new int*[tam1];
-		for(int g=0; g < tam1; g++) island[g] = new int[tam2];
-		
-		//Fill up the matrix
-		for(int a=0; a < tam1; a++)
-			for(int b=0; b < tam2; b++)
-				island[a][b] = 0;
-			
+			//Continue with the next point
+			islandPoint = offset;			
+		}//END WHILE
 
-		//Sets the border of the island 
-		for(ofeli::list<int>::iterator position = islandPoints->begin(); !position.end(); ++position)
+		if(numberOfPoints > 5) 	//To fix some errors of little islands
 		{
-			int X,Y;
-			Y = *position/width;
-			X = *position-(Y*width);
+			//Create the island
+			int tam1= max_x-min_x +1;
+			int tam2 = max_y-min_y+1;
+			CImg<float> island(tam1, tam2, 1,3,255);
+			cont++;
 
-			//Reajust the positions
-			X = X - min_x;
-			Y = Y - min_y;
+			//Inner point control variables
+			bool innerPointFounded = false;
+			int innerPoint_x=-1, innerPoint_y=-1;
+			
+			//Sets the border of the island 
+			for(ofeli::list<int>::iterator position = islandPoints->begin(); !position.end(); ++position)
+			{					
+				int X,Y;
+				Y = *position/width;
+				X = *position-(Y*width);
+				
+				//Take a inner point of the island 
+				if(!innerPointFounded)
+				{					
+					if(phi[(X-1) +  width * Y] == islandInnerFarValue)
+					{
+						innerPoint_x = X-1 - min_x;
+						innerPoint_y= Y- min_y;
+						innerPointFounded=true;
+					}
+					else if(phi[(X+1) +  width * Y] == islandInnerFarValue && !innerPointFounded)
+					{
+						innerPoint_x = X+1 -min_x;
+						innerPoint_y= Y -min_y;
+						innerPointFounded=true;
+					}
+					else if(phi[X +  width * (Y-1)] == islandInnerFarValue && !innerPointFounded)
+					{
+						innerPoint_x = X -min_x;
+						innerPoint_y= Y-1 -min_y;
+						innerPointFounded=true;
+					}
+					else if(phi[X +  width * (Y+1)] == islandInnerFarValue && !innerPointFounded)
+					{
+						innerPoint_x = X -min_x;
+						innerPoint_y= Y+1 -min_y;
+						innerPointFounded=true;
+					}
+				}
 
-			island[X][Y] = 1;
+				//Readjust the positions
+				X = X - min_x;
+				Y = Y - min_y;
+
+				island(X, Y, 0,0) = 0;
+				island(X, Y, 0,1) = 0;
+				island(X, Y, 0,2) = 0;
+			}
+		
+			//To fill up the islands
+			if(innerPointFounded) fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,&island, innerPoint_x, innerPoint_y);			
+
+			//Save the island as a image
+			char nombre[25];
+			sprintf (nombre, "islas/island%d.png", cont);
+			island.save(nombre);
 		}	
-
-		//Creates the island
-		CImg<float> isla(tam1, tam2, 1,3,255); 
-		
-		//Fill up the image from top to bottom
-		for(int a=0; a < tam1; a++)
-		{
-			bool flag = false;
-			bool tocandoBorde = true;
-			
-			for(int b=0; b < tam2; b++)
-			{
-				if(island[a][b] == 1)
-				{
-					flag = true;
-				} 
-				else if(phi[(a + min_x ) + (b + min_y)*width] > 0)
-				{
-					flag = false;
-				}
-				
-				if(flag)
-				{
-					isla(a, b, 0,0) = 0;
-					isla(a, b, 0,1) = 0;
-					isla(a, b, 0,2) = 0;	
-				} 
-			}	
-		}
-
-		//Fill up the image from bottom to top
-		for(int a=tam1 -1; a >=0; a--)
-		{
-			bool flag = false;
-			bool tocandoBorde = true;
-			
-			for(int b=tam2 -1; b >= 0; b--)
-			{
-				if(island[a][b] == 1)
-				{
-					flag = true;
-				} 
-				else if(phi[(a + min_x ) + (b + min_y)*width] > 0)
-				{
-					flag = false;
-				}
-				
-				if(flag)
-				{
-					isla(a, b, 0,0) = 0;
-					isla(a, b, 0,1) = 0;
-					isla(a, b, 0,2) = 0;			
-				} 
-			}	
-		}
-
-		char nombre[25];
-		sprintf (nombre, "islas/isla%d.png", cont);
-		//Save the isolated island
-		isla.save(nombre);	
 	}//END FOR
+	return cont;
+}
+
+
+/** Used to fill up a island **/
+void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y)
+{
+	if(*island->data(innerPoint_x, innerPoint_y, 0, 0) == 255 && phi[ ( (innerPoint_y + min_y) * width) + innerPoint_x + min_x] == islandInnerFarValue)
+	{
+		//Paint the pixel
+		*island->data(innerPoint_x, innerPoint_y, 0,0) = 0;
+		*island->data(innerPoint_x, innerPoint_y, 0,1) = 0;
+		*island->data(innerPoint_x, innerPoint_y, 0,2) = 0;
+		
+		//Extends the paint recursively to its neighbours
+		if(innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue, island, innerPoint_x +1, innerPoint_y);
+		if(innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y);
+		if(innerPoint_y +1 < island->height())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x, innerPoint_y +1);
+		if(innerPoint_y -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x, innerPoint_y -1);		
+		if(innerPoint_y +1 < island->height() && innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y +1);
+		if(innerPoint_y +1 < island->height() && innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x +1, innerPoint_y +1);
+		if(innerPoint_y -1 >= 0 && innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y -1);
+		if(innerPoint_y -1 >= 0 && innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x +1, innerPoint_y -1);		
+	}
 }

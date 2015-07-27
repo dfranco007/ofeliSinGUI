@@ -1280,7 +1280,7 @@ void ActiveContour::initialize_for_each_frame(const unsigned char* img_data1)
 
 
 
-const char* ActiveContour::get_phi() const
+char* ActiveContour::get_phi() const
 {
     return phi;
 }
@@ -1322,20 +1322,24 @@ bool ActiveContour::get_isStopped() const
     return isStopped;
 }
 
-void ActiveContour::calculateCovering() const
+double ActiveContour::calculateCovering(int innerValue) const
 {
-    int sum=0,size=img_width*img_height;
-
+    int sum=0,size=img_width*img_height,inValue;
+	
     #pragma omp parallel for reduction(+:sum)
         for(int i= 0; i < size; i++)
         {
-           if(phi[i] > 0 )
-           {
-                sum++;
-           }
+			if(innerValue < 0)
+			{
+				if(phi[i] < 0 )	sum++;
+			}
+			else
+			{
+				if(phi[i] > 0 )	sum++;
+			}
         }
     double percentage = (sum * 100) / size;
-    std::cout << "Recubrimiento: " << percentage << "%" << std::endl;
+	return percentage;
 }
 
 }
