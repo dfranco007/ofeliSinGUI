@@ -13,7 +13,7 @@ void clean_boundaries(char* phi, char* phi_clean,int img_size,int img_width, int
 bool isRedundantPointOfLin(char* phi, int x, int y, int img_width, int img_height);
 bool isRedundantPointOfLout(char* phi, int x, int y, int img_width, int img_height);
 void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int islandInnerFarValue, int * innerIslands, int * allIslands, int* innerSize, int* maxWidth, int* maxHeight);
-void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y, int size);
+void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y);
 bool goOverAnIsland(char*  phi, int islandPoint, int width, int height, int* min_x, int* min_y, int* max_x, int * max_y, int *inner_min_x, int *inner_min_y, int *inner_max_x, int *inner_max_y, ofeli::list<int>* islandPoints, bool* visitedIslands , int islandInnerValue);
 void  adjustImages(int maxWidth, int maxHeight, int allIslands);
 
@@ -352,13 +352,17 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 {
     int size=width*height, i=0, *inner_min_x =  new int(99999999), *inner_min_y = new int(99999999) , *inner_max_x = new int(-1) , *inner_max_y = new int(-1) ;
     bool* visitedIslands = new bool[size];
+	bool innerIsland;
+	CImg<float> noInnerIslandOnlyImage(width, height, 1,3,255);
+
     for(int a=0; a < size; a++) visitedIslands[a] = false;
 
 	//Find all the islands in the image
 	for(int i=0; i < size; i++)
 	{
 	    ofeli::list<int>* islandPoints = new ofeli::list<int>();
-
+		innerIsland = false;
+		
 		//Find a island 
 		for(; i < size; i++)
 		{
@@ -369,7 +373,8 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 		//Go over the island to be isolated
 		if ( goOverAnIsland(phi, i, width, height, min_x, min_y, max_x, max_y, inner_min_x, inner_min_y, inner_max_x, inner_max_y, islandPoints, visitedIslands, islandInnerValue ) == true)
         {
-            *innerIslands= *innerIslands +1;
+			innerIsland = true;
+			*innerIslands= *innerIslands +1;
         }				
 		        
 		//Create the island
@@ -419,8 +424,8 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 					innerPoint_y= Y+1 -*min_y;
 					innerPointFounded=true;
 				}
-			}
-
+			}		
+			
 			//Readjust the positions
 			X = X - *min_x;
 			Y = Y - *min_y;
@@ -431,22 +436,44 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 		}
 
 		//To fill up the islands
-		if(innerPointFounded) fillUpIsland(phi,width, *min_x,*min_y,islandInnerFarValue,&island, innerPoint_x, innerPoint_y,size);			
+		if(innerPointFounded)
+		{
+			fillUpIsland(phi,width, *min_x,*min_y,islandInnerFarValue,&island, innerPoint_x, innerPoint_y);
+			
+			if(!innerIsland)
+			{	
+				for(int y = 0; y < island.height(); y++)
+				{
+					for(int x= 0; x < island.width(); x++)
+					{
+						if(*island.data(x, y, 0, 0) == 0)
+						{
+							noInnerIslandOnlyImage(x + *min_x, y + *min_y, 0,0) = 0;
+							noInnerIslandOnlyImage(x + *min_x, y + *min_y, 0,1) = 0;
+							noInnerIslandOnlyImage(x + *min_x, y + *min_y, 0,2) = 0;
+						}	
+					}
+				}	
+			}
+		} 			
 
 		//Save the island as a image
 		char name[25];
 		sprintf (name, "islas/island%d.png", *allIslands);
 		island.save(name);
-
+		
         delete min_x; delete min_y; delete max_x; delete max_y;
 	}//END FOR
-    
+
+	//Save the all NO inner islands as a separate image to make PSD
+	noInnerIslandOnlyImage.save("islas/innerIslands.png");
+
     delete inner_min_x; delete inner_min_y; delete inner_max_x; delete inner_max_y;
 }
 
 
 /** Used to fill up a island **/
-void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y, int size)
+void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y)
 {
 	if(*island->data(innerPoint_x, innerPoint_y, 0, 0) == 255 && phi[ ( (innerPoint_y + min_y) * width) + innerPoint_x + min_x] == islandInnerFarValue)
 	{
@@ -456,14 +483,14 @@ void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFar
 		*island->data(innerPoint_x, innerPoint_y, 0,2) = 0;
 		
 		//Extends the paint recursively to its neighbours
-		if(innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue, island, innerPoint_x +1, innerPoint_y,size);
-		if(innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y,size);
-		if(innerPoint_y +1 < island->height())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x, innerPoint_y +1,size);
-		if(innerPoint_y -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x, innerPoint_y -1,size);		
-		if(innerPoint_y +1 < island->height() && innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y +1,size);
-		if(innerPoint_y +1 < island->height() && innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x +1, innerPoint_y +1,size);
-		if(innerPoint_y -1 >= 0 && innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y -1,size);
-		if(innerPoint_y -1 >= 0 && innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x +1, innerPoint_y -1,size);		
+		if(innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue, island, innerPoint_x +1, innerPoint_y);
+		if(innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y);
+		if(innerPoint_y +1 < island->height())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x, innerPoint_y +1);
+		if(innerPoint_y -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x, innerPoint_y -1);		
+		if(innerPoint_y +1 < island->height() && innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y +1);
+		if(innerPoint_y +1 < island->height() && innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x +1, innerPoint_y +1);
+		if(innerPoint_y -1 >= 0 && innerPoint_x -1 >= 0)	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x -1, innerPoint_y -1);
+		if(innerPoint_y -1 >= 0 && innerPoint_x +1 < island->width())	fillUpIsland(phi,width,min_x,min_y,islandInnerFarValue,island, innerPoint_x +1, innerPoint_y -1);		
 	}
 	
 }
@@ -489,7 +516,7 @@ bool goOverAnIsland(char*  phi, int islandPoint, int width, int height, int* min
 	islandPoints->push_front(islandPoint);
 
 	//Test if the current point is in the the border of the image
-	if( x == 0 || y ==0) touchingBorder = true;
+	if( x == 0 || y ==0 || x == width -1 || y == height -1) touchingBorder = true;
 	if(!touchingBorder)
 	{
 		if(x < *inner_min_x) *inner_min_x = x;
@@ -608,7 +635,45 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 		sprintf (name2, "islas/island%d.png", i);
 		newIsland.save(name2);
     }
-   
+	
+	//Create island PSD files 
+	for(int i=1; i <= allIslands; i++)
+    {
+        char name1[25];
+		sprintf (name1, "islas/island%d.png", i);
+    	CImg<float> island(name1); 
+        
+		char name2[25];
+		sprintf (name2, "islas/i%d.txt", i);
+		std::ofstream outfile(name2);
+		
+		//Complete the new island centred and resized 
+		for(int y = 0; y < island.height(); y++)
+		{
+			for(int x= 0; x < island.width(); x++)
+			{
+				if(*island.data(x, y, 0, 0) == 0)
+					outfile << x << "	" << y << "		" << -1 << std::endl;
+				else 
+					outfile << x << "	" << y << "		" << 0 << std::endl;
+			}
+		}
+		outfile.close();
+    }
+	
+	
+	CImg<float> island("islas/innerIslands.png"); 
+	std::ofstream outfile("islas/innerIslands.txt");
+	//Create inner island image PSD file
+	for(int y = 0; y < island.height(); y++)
+	{
+		for(int x= 0; x < island.width(); x++)
+		{
+			if(*island.data(x, y, 0, 0) == 0)
+				outfile << x << "	" << y << "		" << -1 << std::endl;
+			else 
+				outfile << x << "	" << y << "		" << 0 << std::endl;
+		}
+	}	
+	outfile.close();
 }
-
-
