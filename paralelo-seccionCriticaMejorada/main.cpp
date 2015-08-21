@@ -354,6 +354,7 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
     bool* visitedIslands = new bool[size];
 	bool innerIsland;
 	CImg<float> noInnerIslandOnlyImage(width, height, 1,3,255);
+	std::ofstream innerIslandsList("innerIslandsList.txt");
 
     for(int a=0; a < size; a++) visitedIslands[a] = false;
 
@@ -456,7 +457,11 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 				}	
 			}
 		} 			
-
+		if(innerIsland)
+		{									
+			innerIslandsList << *allIslands << std::endl;
+		}
+		
 		//Save the island as a image
 		char name[25];
 		sprintf (name, "islas/island%d.png", *allIslands);
@@ -467,6 +472,7 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 
 	//Save the all NO inner islands as a separate image to make PSD
 	noInnerIslandOnlyImage.save("islas/innerIslands.png");
+	innerIslandsList.close();
 
     delete inner_min_x; delete inner_min_y; delete inner_max_x; delete inner_max_y;
 }
@@ -601,18 +607,20 @@ bool goOverAnIsland(char*  phi, int islandPoint, int width, int height, int* min
 
 void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 {
+	std::ifstream innerIslandsList("innerIslandsList.txt");
+	
 	//To the square images 
 	if(maxWidth > maxHeight)	maxHeight = maxWidth;
 	else	maxWidth = maxHeight;
-	
+
 	for(int i=1; i <= allIslands; i++)
-    {
-        char name1[25];
+    {	
+		char name1[25];
 		sprintf (name1, "islas/island%d.png", i);
-    	CImg<float> island(name1); 
-        
+		CImg<float> island(name1); 
+		
 		int posX = (maxWidth - island.width())/2;
-        int posY = (maxHeight - island.height())/2;
+		int posY = (maxHeight - island.height())/2;
 		
 		CImg<float> newIsland(maxWidth, maxHeight, 1,3,255);
 		
@@ -634,31 +642,43 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 		char name2[25];
 		sprintf (name2, "islas/island%d.png", i);
 		newIsland.save(name2);
+		
     }
+	
+	int number;
+	innerIslandsList >> number;
 	
 	//Create island PSD files 
 	for(int i=1; i <= allIslands; i++)
     {
-        char name1[25];
-		sprintf (name1, "islas/island%d.png", i);
-    	CImg<float> island(name1); 
-        
-		char name2[25];
-		sprintf (name2, "islas/i%d.txt", i);
-		std::ofstream outfile(name2);
-		
-		//Complete the new island centred and resized 
-		for(int y = 0; y < island.height(); y++)
+		if(number != i)
 		{
-			for(int x= 0; x < island.width(); x++)
+			char name1[25];
+			sprintf (name1, "islas/island%d.png", i);
+			CImg<float> island(name1); 
+			
+			char name2[25];
+			sprintf (name2, "islas/i%d.txt", i);
+			std::ofstream outfile(name2);
+			
+			//Complete the new island centred and resized 
+			for(int y = 0; y < island.height(); y++)
 			{
-				if(*island.data(x, y, 0, 0) == 0)
-					outfile << x << "	" << y << "		" << -1 << std::endl;
-				else 
-					outfile << x << "	" << y << "		" << 0 << std::endl;
+				for(int x= 0; x < island.width(); x++)
+				{
+					if(*island.data(x, y, 0, 0) == 0)
+						outfile << x << "	" << y << "		" << -1 << std::endl;
+					else 
+						outfile << x << "	" << y << "		" << 0 << std::endl;
+				}
 			}
+			outfile.close();
+			
 		}
-		outfile.close();
+		else
+		{
+			innerIslandsList >> number;
+		} 
     }
 	
 	
@@ -675,5 +695,7 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 				outfile << x << "	" << y << "		" << 0 << std::endl;
 		}
 	}	
+	
+	innerIslandsList.close();
 	outfile.close();
 }
