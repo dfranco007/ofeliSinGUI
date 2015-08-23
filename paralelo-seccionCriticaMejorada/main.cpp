@@ -1,5 +1,6 @@
 #include "ac_withoutedges.hpp"
 #include <stdio.h>
+#include <stdlib.h>
 #include "CImg/CImg.h"
 #include <sys/time.h>
 #include <locale>
@@ -15,7 +16,7 @@ bool isRedundantPointOfLout(char* phi, int x, int y, int img_width, int img_heig
 void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int islandInnerFarValue, int * innerIslands, int * allIslands, int* innerSize, int* maxWidth, int* maxHeight);
 void fillUpIsland(char*  phi,int width, int min_x, int min_y, int islandInnerFarValue, CImg<float>* island, int innerPoint_x, int innerPoint_y);
 bool goOverAnIsland(char*  phi, int islandPoint, int width, int height, int* min_x, int* min_y, int* max_x, int * max_y, int *inner_min_x, int *inner_min_y, int *inner_max_x, int *inner_max_y, ofeli::list<int>* islandPoints, bool* visitedIslands , int islandInnerValue);
-void  adjustImages(int maxWidth, int maxHeight, int allIslands);
+void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight, int allIslands);
 
 template <class charT, charT sep>
 class punct_facet: public std::numpunct<charT> {
@@ -25,6 +26,9 @@ protected:
 
 int main(int argc, char* argv[])
 {	
+	//Create directories
+	system("mkdir islands islands/allIslands_inOriginalImage islands/innerIslands_PSD_files islands/all_PSD_files islands/allIslands");
+
 	//File variable configuration
 	std::string line;
 	std::ifstream file;
@@ -201,9 +205,15 @@ int main(int argc, char* argv[])
 	std::cout << "Inner islands density: " << innerIslandsDensity << std::endl;
 	std::cout << "Average islands density(all and inner): " << (innerIslandsDensity + allIslandsDensity)/2 << std::endl;
 	
-    //Change the all images to the same size and squares them to calculate PSD correctly
-    adjustImages(*maxWidth, *maxHeight, *allIslands);
-    
+    //Change the all images to the same size and squares them to calculate PSD correctly. Also creates PSD files.
+    adjustImagesAndCreatePSDFiles(*maxWidth, *maxHeight, *allIslands);
+	system("cp islands/innerIslands_PSD_files/* islands/all_PSD_files");
+
+	//PSD
+	system("java -jar psd.jar islands/innerIslands_PSD_files/i" + *allIslands + "false true");
+	system("java -jar psd.jar islands/allIslands 1 false true");
+	system("java -jar psd.jar islands/innerIslands 1 false true");
+
     delete innerIslands; delete allIslands; delete innerSize;
     
 	return 0;	
@@ -353,7 +363,9 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
     int size=width*height, i=0, *inner_min_x =  new int(99999999), *inner_min_y = new int(99999999) , *inner_max_x = new int(-1) , *inner_max_y = new int(-1) ;
     bool* visitedIslands = new bool[size];
 	bool innerIsland;
-	CImg<float> noInnerIslandOnlyImage(width, height, 1,3,255);
+	CImg<float> innerIslandOnlyImage(width, height, 1,3,255);
+	CImg<float> allIslandsInOriginalImage(width, height, 1,3,255);
+
 	std::ofstream innerIslandsList("innerIslandsList.txt");
 
     for(int a=0; a < size; a++) visitedIslands[a] = false;
@@ -380,12 +392,11 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 		        
 		//Create the island
 		*innerSize = (*inner_max_x - *inner_min_x + 1) * (*inner_max_y - *inner_min_y + 1); //To calculate the inner density
-		int tam1= *max_x-*min_x +1;
-		int tam2 = *max_y-*min_y+1;
+		int tam1= *max_x-*min_x +1, tam2 = *max_y-*min_y+1, pointNumber=0;
         if(*maxWidth < tam1)  *maxWidth= tam1;
         if(*maxHeight < tam2) *maxHeight = tam2;
 		CImg<float> island(tam1, tam2, 1,3,255);
-		*allIslands = *allIslands +1;
+		CImg<float> islandInOriginalImage(width, height, 1,3,255);
 
 		//Inner point control variables
 		bool innerPointFounded = false;
@@ -434,46 +445,79 @@ void isolateIslands(char*  phi, int width, int height, int islandInnerValue, int
 			island(X, Y, 0,0) = 0;
 			island(X, Y, 0,1) = 0;
 			island(X, Y, 0,2) = 0;
+			
+			pointNumber++;
 		}
 
-		//To fill up the islands
-		if(innerPointFounded)
+		//Take islands which have at least 5 pixels
+		if(pointNumber > 5)
 		{
-			fillUpIsland(phi,width, *min_x,*min_y,islandInnerFarValue,&island, innerPoint_x, innerPoint_y);
+			*allIslands = *allIslands +1;
+
+			if(innerPointFounded)
+			{
+				//To fill up the islands
+				fillUpIsland(phi,width, *min_x,*min_y,islandInnerFarValue,&island, innerPoint_x, innerPoint_y);
 			
-			if(!innerIsland)
-			{	
+				//Print the inner island in a image with the size of the original image  			
+				if(!innerIsland)
+				{	
+					for(int y = 0; y < island.height(); y++)
+					{
+						for(int x= 0; x < island.width(); x++)
+						{
+							if(*island.data(x, y, 0, 0) == 0)
+							{
+								innerIslandOnlyImage(x + *min_x, y + *min_y, 0,0) = 0;
+								innerIslandOnlyImage(x + *min_x, y + *min_y, 0,1) = 0;
+								innerIslandOnlyImage(x + *min_x, y + *min_y, 0,2) = 0;
+							}	
+						}
+					}	
+				}
+				
+				//Print the island in a image with the size of the original image and as a single image with the size of the original image			
 				for(int y = 0; y < island.height(); y++)
 				{
 					for(int x= 0; x < island.width(); x++)
 					{
 						if(*island.data(x, y, 0, 0) == 0)
-						{
-							noInnerIslandOnlyImage(x + *min_x, y + *min_y, 0,0) = 0;
-							noInnerIslandOnlyImage(x + *min_x, y + *min_y, 0,1) = 0;
-							noInnerIslandOnlyImage(x + *min_x, y + *min_y, 0,2) = 0;
+						{					
+							islandInOriginalImage(x + *min_x, y + *min_y, 0,0) = 0;
+							islandInOriginalImage(x + *min_x, y + *min_y, 0,1) = 0;
+							islandInOriginalImage(x + *min_x, y + *min_y, 0,2) = 0;
+							
+							allIslandsInOriginalImage(x + *min_x, y + *min_y, 0,0) = 0;
+							allIslandsInOriginalImage(x + *min_x, y + *min_y, 0,1) = 0;
+							allIslandsInOriginalImage(x + *min_x, y + *min_y, 0,2) = 0;
 						}	
 					}
 				}	
+			} 
+
+			//Save the inner island number in a auxiliary file to make PSD file after
+			if(innerIsland)
+			{									
+				innerIslandsList << *allIslands << std::endl;
 			}
-		} 			
-		if(innerIsland)
-		{									
-			innerIslandsList << *allIslands << std::endl;
+			
+			//Save the island as a single image
+			char name[25], name2[50];
+			sprintf (name, "islands/allIslands/island%d.png", *allIslands);
+			island.save(name);
+			sprintf (name2, "islands/allIslands_inOriginalImage/island%d.png", *allIslands);
+			islandInOriginalImage.save(name2);		
 		}
-		
-		//Save the island as a image
-		char name[25];
-		sprintf (name, "islas/island%d.png", *allIslands);
-		island.save(name);
 		
         delete min_x; delete min_y; delete max_x; delete max_y;
 	}//END FOR
 
 	//Save the all NO inner islands as a separate image to make PSD
-	noInnerIslandOnlyImage.save("islas/innerIslands.png");
+	innerIslandOnlyImage.save("islands/innerIslands1.png");
 	innerIslandsList.close();
-
+	
+	allIslandsInOriginalImage.save("islands/allIslands1.png");
+		
     delete inner_min_x; delete inner_min_y; delete inner_max_x; delete inner_max_y;
 }
 
@@ -605,7 +649,7 @@ bool goOverAnIsland(char*  phi, int islandPoint, int width, int height, int* min
 }
 
 
-void  adjustImages(int maxWidth, int maxHeight, int allIslands)
+void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight, int allIslands)
 {
 	std::ifstream innerIslandsList("innerIslandsList.txt");
 	
@@ -616,7 +660,7 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 	for(int i=1; i <= allIslands; i++)
     {	
 		char name1[25];
-		sprintf (name1, "islas/island%d.png", i);
+		sprintf (name1, "islands/allIslands/island%d.png", i);
 		CImg<float> island(name1); 
 		
 		int posX = (maxWidth - island.width())/2;
@@ -640,7 +684,7 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 		}
 		
 		char name2[25];
-		sprintf (name2, "islas/island%d.png", i);
+		sprintf (name2, "islands/allIslands/island%d.png", i);
 		newIsland.save(name2);
 		
     }
@@ -651,39 +695,43 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 	//Create island PSD files 
 	for(int i=1; i <= allIslands; i++)
     {
+		char name1[25], name2[25];
+		sprintf (name1, "islands/allIslands/island%d.png", i);
+		CImg<float> island(name1); 
+		
 		if(number != i)
+			sprintf (name2, "islands/innerIslands_PSD_files/i%d.txt", i);			
+		else	
 		{
-			char name1[25];
-			sprintf (name1, "islas/island%d.png", i);
-			CImg<float> island(name1); 
-			
-			char name2[25];
-			sprintf (name2, "islas/i%d.txt", i);
-			std::ofstream outfile(name2);
-			
-			//Complete the new island centred and resized 
-			for(int y = 0; y < island.height(); y++)
-			{
-				for(int x= 0; x < island.width(); x++)
-				{
-					if(*island.data(x, y, 0, 0) == 0)
-						outfile << x << "	" << y << "		" << -1 << std::endl;
-					else 
-						outfile << x << "	" << y << "		" << 0 << std::endl;
-				}
-			}
-			outfile.close();
-			
-		}
-		else
-		{
+			sprintf (name2, "islands/all_PSD_files/i%d.txt", i);
 			innerIslandsList >> number;
-		} 
-    }
+		}
+
+		std::ofstream outfile(name2);
+
+		//Set header of the PSD file	
+		outfile << "#	" << island.width() << std::endl;
+						
+		//Complete the new island centred and resized 
+		for(int y = 0; y < island.height(); y++)
+		{
+			for(int x= 0; x < island.width(); x++)
+			{
+				if(*island.data(x, y, 0, 0) == 0)
+					outfile << x << "	" << y << "		" << -1 << std::endl;
+				else 
+					outfile << x << "	" << y << "		" << 0 << std::endl;
+			}
+		}
+		outfile.close();
+    }	
 	
+	CImg<float> island("islands/innerIslands1.png"); 
+	std::ofstream outfile("islands/innerIslands1.txt");
 	
-	CImg<float> island("islas/innerIslands.png"); 
-	std::ofstream outfile("islas/innerIslands.txt");
+	//Set header of the PSD file	
+	outfile << "#	" << island.width() << std::endl;
+									
 	//Create inner island image PSD file
 	for(int y = 0; y < island.height(); y++)
 	{
@@ -696,6 +744,26 @@ void  adjustImages(int maxWidth, int maxHeight, int allIslands)
 		}
 	}	
 	
+	CImg<float> island2("islands/allIslands1.png"); 
+	std::ofstream outfile2("islands/allIslands1.txt");
+	
+	//Set header of the PSD file	
+	outfile2 << "#	" << island2.width() << std::endl;
+															
+	//Create inner island image PSD file
+	for(int y = 0; y < island2.height(); y++)
+	{
+		for(int x= 0; x < island2.width(); x++)
+		{
+			if(*island2.data(x, y, 0, 0) == 0)
+				outfile2 << x << "	" << y << "		" << -1 << std::endl;
+			else 
+				outfile2 << x << "	" << y << "		" << 0 << std::endl;
+		}
+	}	
+	
 	innerIslandsList.close();
+	system("rm innerIslandsList.txt");
 	outfile.close();
+	outfile2.close();
 }
