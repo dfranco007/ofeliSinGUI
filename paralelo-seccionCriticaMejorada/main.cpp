@@ -27,7 +27,7 @@ protected:
 int main(int argc, char* argv[])
 {	
 	//Create directories
-	system("mkdir islands islands/rescaledAllIslands islands/allIslands_inOriginalImage islands/innerIslands_PSD_files islands/all_PSD_files islands/allIslands");
+	system("mkdir islands islands/rescaledAllIslands islands/allIslands_inOriginalImage islands/innerIslands_PSD_files islands/allIslands");
 
 	//File variable configuration
 	std::string line;
@@ -206,8 +206,9 @@ int main(int argc, char* argv[])
 	std::cout << "Average islands density(all and inner): " << (innerIslandsDensity + allIslandsDensity)/2 << std::endl;
 	
     //Change the all images to the same size and squares them to calculate PSD correctly. Also creates PSD files.
-    adjustImagesAndCreatePSDFiles(*maxWidth, *maxHeight, width, height, *allIslands);
-	system("cp islands/innerIslands_PSD_files/* islands/all_PSD_files");
+	std::cout << "Preparing images to make PSD calculation... " << std::endl;
+	adjustImagesAndCreatePSDFiles(*maxWidth, *maxHeight, width, height, *allIslands);
+	system("cp islands/innerIslands_PSD_files/* islands/allIslands");
 
 	//PSD
 	//system("java -jar psd.jar islands/innerIslands_PSD_files/i" + *allIslands + "false true");
@@ -695,9 +696,26 @@ void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight,int originalWidt
 		newIsland.save(name2);	
 		
 		//Save the island with the size of the original image
-		sprintf (name1, "islands/rescaledAllIslands/island%d.png", i);		
-		newIsland.resize(originalWidth, originalHeight, 1, 3, 1);
-		newIsland.save(name1);
+		sprintf (name1, "islands/rescaledAllIslands/island%d.png", i);
+		CImg<float> newIsland2(originalWidth, originalHeight, 1,3,255);
+
+		int aux_x = (originalWidth - newIsland.width())/2;
+		int aux_y = (originalHeight - newIsland.height())/2;
+		
+		for(int y = 0; y < newIsland.height(); y++)
+		{
+			for(int x= 0; x < newIsland.width(); x++)
+			{
+				if(*newIsland.data(x, y, 0, 0) == 0)
+				{
+					newIsland2(x + aux_x, y + aux_y, 0,0) = 0;
+					newIsland2(x + aux_x, y + aux_y, 0,1) = 0;
+					newIsland2(x + aux_x, y + aux_y, 0,2) = 0;
+				}
+				
+			}
+		}		
+		newIsland2.save(name1);
     }
 	
 	int number;
@@ -717,7 +735,7 @@ void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight,int originalWidt
 		}						
 		else	
 		{
-			sprintf (name2, "islands/all_PSD_files/i%d.txt", i);
+			sprintf (name2, "islands/allIslands/i%d.txt", i);
 		}
 
 		std::ofstream outfile(name2);
@@ -731,9 +749,9 @@ void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight,int originalWidt
 			for(int x= 0; x < island.width(); x++)
 			{
 				if(*island.data(x, y, 0, 0) == 0)
-					outfile << x << "	" << y << "		" << -1 << std::endl;
-				else 
 					outfile << x << "	" << y << "		" << 0 << std::endl;
+				else 
+					outfile << x << "	" << y << "		" << -1 << std::endl;
 			}
 		}
 		outfile.close();
@@ -753,12 +771,34 @@ void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight,int originalWidt
 			for(int x= 0; x < island2.width(); x++)
 			{
 				if(*island2.data(x, y, 0, 0) == 0)
-					outfile2 << x << "	" << y << "		" << -1 << std::endl;
+					outfile2 << x << "	" << y << "		" << 0<< std::endl;
 				else 
-					outfile2 << x << "	" << y << "		" << 0 << std::endl;
+					outfile2 << x << "	" << y << "		" << -1 << std::endl;
 			}
 		}
 		outfile2.close();	
+		
+		//Make another PSD file of the isolated island in the original image
+		sprintf (name1, "islands/allIslands_inOriginalImage/island%d.png", i);		
+		CImg<float> island3(name1); 
+		sprintf (name2, "islands/allIslands_inOriginalImage/i%d.txt", i);			
+		std::ofstream outfile3(name2);
+
+		//Set header of the PSD file	
+		outfile3 << "#	" << island3.width() << "	" << island3.height() << std::endl;
+						
+		//Complete the new island centred and resized 
+		for(int y = 0; y < island3.height(); y++)
+		{
+			for(int x= 0; x < island3.width(); x++)
+			{
+				if(*island3.data(x, y, 0, 0) == 0)
+					outfile3 << x << "	" << y << "		" << 0 << std::endl;
+				else 
+					outfile3 << x << "	" << y << "		" << -1 << std::endl;
+			}
+		}
+		outfile3.close();	
     }	
 	
 	CImg<float> island("islands/scaledInnerIslands1.png"); 
@@ -773,9 +813,9 @@ void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight,int originalWidt
 		for(int x= 0; x < island.width(); x++)
 		{
 			if(*island.data(x, y, 0, 0) == 0)
-				outfile << x << "	" << y << "		" << -1 << std::endl;
-			else 
 				outfile << x << "	" << y << "		" << 0 << std::endl;
+			else 
+				outfile << x << "	" << y << "		" << -1 << std::endl;
 		}
 	}	
 	
@@ -791,9 +831,9 @@ void  adjustImagesAndCreatePSDFiles(int maxWidth, int maxHeight,int originalWidt
 		for(int x= 0; x < island2.width(); x++)
 		{
 			if(*island2.data(x, y, 0, 0) == 0)
-				outfile2 << x << "	" << y << "		" << -1 << std::endl;
-			else 
 				outfile2 << x << "	" << y << "		" << 0 << std::endl;
+			else 
+				outfile2 << x << "	" << y << "		" << -1 << std::endl;
 		}
 	}	
 	
